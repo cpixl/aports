@@ -10,6 +10,7 @@ get_defaults() {
 	if [ -z "$board" -a -e /sys/firmware/devicetree/base/compatible ]; then
 		case "$(cat /sys/firmware/devicetree/base/compatible 2>/dev/null)" in
 		wand,*) board=wand ;;
+		hardkernel,odroid-c2amlogic,*) board=odroid-c2 ;;
 		esac
 	fi
 
@@ -17,6 +18,7 @@ get_defaults() {
 		case "$board" in
 		wand|cubie|cubie2) device=/dev/mmcblk0p0 ;;
 		mx6cuboxi) device=/dev/mmcblk0 ;;
+		odroid-c2) device=/dev/mmcblk0 ;;
 		esac
 	fi
 
@@ -39,7 +41,7 @@ usage: $0 [-b|--board <board-type>] [-d|--device <device>]
 
 options:
 
- -b,--board <board>       Specify the board type: wand, cubie, cubie2, cuboxi
+ -b,--board <board>       Specify the board type: wand, cubie, cubie2, cuboxi, odroid-c2
                           (current default: ${board:-none})
 
  -d,--device <device>     Specify the device where to install u-boot
@@ -62,6 +64,7 @@ while [ $# -gt 0 ]; do
 		wand|wandboard) board="wand" ;;
 		cubie|cubieboard) board="cubie" ;;
 		cuboxi|mx6cuboxi) board="mx6cuboxi" ;;
+		odroid-c2) board="odroid-c2" ;;
 		*) usage; exit 1;;
 		esac
 		shift
@@ -77,18 +80,18 @@ while [ $# -gt 0 ]; do
 	-n|--dry-run)
 		dryrun="echo"
 		;;
-        --)
-                break
-                ;;
-        -*)
-                usage
-                exit 1
-                ;;
-        esac
+	--)
+		break
+		;;
+	-*)
+		usage
+		exit 1
+		;;
+	esac
 done
 
 get_defaults
-if [ -z "$board" -o -z "$device" -o -z "$imagedir" -o  ! -e "$imagedir" ]; then
+if [ -z "$board" -o -z "$device" -o -z "$imagedir" -o ! -e "$imagedir" ]; then
 	usage
 	exit 1
 fi
@@ -103,18 +106,23 @@ set -e
 case "$board" in
 wand)
 	[ -e "$imagedir/wandboard" ] || die "wandboard images not installed, apk add u-boot-wandboard"
-	$dryrun dd if=$imagedir/wandboard/SPL of=$device bs=1k seek=1 status=none
-	$dryrun dd if=$imagedir/wandboard/u-boot.img of=$device bs=1k seek=69 status=none
+	$dryrun dd if="$imagedir"/wandboard/SPL of="$device" bs=1k seek=1 conv=notrunc status=none
+	$dryrun dd if="$imagedir"/wandboard/u-boot.img of="$device" bs=1k seek=69 conv=notrunc status=none
 	;;
 cubie|cubie2)
 	[ -e "$imagedir/Cubieboard${board#cubie}" ] || die "Cubieboard images not installed, apk add u-boot-cubieboard"
-	$dryrun dd if=$imagedir/Cubieboard${board#cubie}/u-boot-sunxi-with-spl.bin of=$device bs=1024 seek=8 status=none
+	$dryrun dd if="$imagedir"/Cubieboard"${board#cubie}"/u-boot-sunxi-with-spl.bin of="$device" bs=1024 seek=8 conv=notrunc status=none
 	;;
 mx6cuboxi)
 	[ -e "$imagedir/mx6cuboxi" ] || die "iMX6 Cubox-i images not installed, apk add u-boot-cuboxi"
-	$dryrun dd if=$imagedir/mx6cuboxi/SPL of=$device bs=1k seek=1 status=none
-	$dryrun dd if=$imagedir/mx6cuboxi/u-boot.img of=$device bs=1k seek=69 status=none
+	$dryrun dd if="$imagedir"/mx6cuboxi/SPL of="$device" bs=1k seek=1 conv=notrunc status=none
+	$dryrun dd if="$imagedir"/mx6cuboxi/u-boot.img of="$device" bs=1k seek=69 conv=notrunc status=none
 	;;
+odroid-c2)
+	[ -e "$imagedir/odroid-c2" ] || die "ODROID-C2 images not installed, apk add u-boot-odroid"
+	$dryrun dd if="$imagedir"/odroid-c2/bl1.bin.hardkernel of="$device" bs=1 count=442 conv=notrunc status=none
+	$dryrun dd if="$imagedir"/odroid-c2/bl1.bin.hardkernel of="$device" bs=512 skip=1 seek=1 conv=notrunc status=none
+	$dryrun dd if="$imagedir"/odroid-c2/u-boot.gxbb of="$device" bs=512 seek=97 conv=notrunc status=none
 esac
 $dryrun sync
 ) || die "U-Boot installation in $device failed"

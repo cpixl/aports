@@ -1,20 +1,21 @@
 # Contributor: He Yangxuan <yangxuan8282@gmail.com>
-# Contributor:
 # Contributor: Timo Teras <timo.teras@iki.fi>
 # Maintainer: Leonardo Arena <rnalrd@alpinelinux.org>
 pkgname=u-boot
 pkgver=2019.10
-pkgrel=0
+pkgrel=1
 pkgdesc="u-boot bootloader common files"
 url="http://www.denx.de/wiki/U-Boot/"
 arch="armhf armv7 aarch64"
 license="GPL-2.0-or-later OFL-1.1 BSD-2-Clause BSD-3-Clause eCos-2.0 IBM-pibs
 	ISC LGPL-2.0-only LGPL-2.1-only X11"
-makedepends="$depends_dev bc dtc python2-dev swig bison flex openssl-dev"
+makedepends="$depends_dev bc dtc python2-dev swig bison flex openssl-dev bsd-compat-headers meson-tools"
 if [ "$CARCH" = "aarch64" ]; then
 	makedepends="$makedepends arm-trusted-firmware-sun50i"
 fi
+_odroidc2_commit=205c7b3259559283161703a1a200b787c2c445a5
 source="ftp://ftp.denx.de/pub/u-boot/u-boot-${pkgver//_/-}.tar.bz2
+	u-boot-odroidc2.tar.gz::https://github.com/hardkernel/u-boot/archive/${_odroidc2_commit}.tar.gz
 	README.txt
 	update-u-boot
 	"
@@ -69,6 +70,23 @@ build() {
 			mkdir -p "$BUILD_DIR"
 			make O="$BUILD_DIR" ${board}_config || return 1
 			make O="$BUILD_DIR" all || return 1
+
+			if [ "$board" = "odroid-c2" ]; then
+				# ODROID-C2 requires a signed bootloader
+				local odroid_dir="$srcdir"/u-boot-$_odroidc2_commit
+				sed -i 's/-Werror//' "$odroid_dir"/tools/fip_create/Makefile
+				make -C "$odroid_dir"/tools/fip_create
+				"$odroid_dir"/tools/fip_create/fip_create \
+					--bl30  "$odroid_dir"/fip/gxb/bl30.bin \
+					--bl301 "$odroid_dir"/fip/gxb/bl301.bin \
+					--bl31  "$odroid_dir"/fip/gxb/bl31.bin \
+					--bl33  "$BUILD_DIR"/u-boot.bin \
+					"$BUILD_DIR"/fip.bin
+				cat "$odroid_dir"/fip/gxb/bl2.package "$BUILD_DIR"/fip.bin > "$BUILD_DIR"/boot_new.bin
+				amlbootsig "$BUILD_DIR"/boot_new.bin "$BUILD_DIR"/u-boot.img
+				dd if="$BUILD_DIR"/u-boot.img of="$BUILD_DIR"/u-boot.gxbb bs=512 skip=96
+				cp "$odroid_dir"/sd_fuse/bl1.bin.hardkernel "$BUILD_DIR"
+			fi
 		done
 	done
 }
@@ -98,7 +116,8 @@ _split_boards() {
 		mkdir -p "$subpkgdir"/usr/share/$pkgname/$board
 		export BUILD_DIR="$builddir"/build/$board
 		local ok=no
-		for image in u-boot-sunxi-with-spl.bin -- MLO SPL u-boot.img -- u-boot.bin; do
+		for image in u-boot-sunxi-with-spl.bin -- bl1.bin.hardkernel u-boot.gxbb -- \
+			MLO SPL u-boot.img -- u-boot.bin; do
 			if [ "$image" = "--" ]; then
 				[ "$ok" = yes ] && break
 				continue
@@ -120,5 +139,6 @@ for board_config in $board_configs; do
 done
 
 sha512sums="d8e98fca4b6af8d49d20ec09beab16b77863fcee88cda3605cc14435de21030bf3ca5e7cf7d06e42d4c0f75279c7295ecd628d2b77666eff7b7fd50374e051fd  u-boot-2019.10.tar.bz2
+7929bd3ae90dea5966678dc4673627b58c9d270ef898bb42e3ba80f8626d4a821c0093c9d71d8eca08451906c7cba1eb6951cd0ec3a88c056c74eb9e1b5af6c4  u-boot-odroidc2.tar.gz
 f8c9bb6e84d6f0620c976ac7ad5dd7ec7ff9dfdd4b1d03d2bf6653e7beccf80bdf2debfc92fb1f696dba92fb40287d3c45897e0078951451d0835cb61a5f16d1  README.txt
-b3b4fb70c4eea2034bae45c513bca7b738be7507b46d3f2d62b31c794cd238d492acf960c95078cb1c945520debd5d2762103df7cef0fc36acfe9ff9a94549fc  update-u-boot"
+fe086b84d867bbdc78568559a3e822a22b348c81bed0326bdc94f15f6a633d40d5a5f0326139d1d39314dab7dccfe6434ceba06643e11edd914aa73b8c80cbfc  update-u-boot"
